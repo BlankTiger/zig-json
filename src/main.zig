@@ -1,5 +1,6 @@
 ///! Simple JSON parsing library with a focus on a simple, usable API.
 const std = @import("std");
+const fmt = std.fmt;
 const Allocator = std.mem.Allocator;
 const Buffer = @import("buffer.zig").Buffer;
 const BufferErrors = @import("buffer.zig").BufferErrors;
@@ -203,7 +204,37 @@ pub const JsonObject = struct {
         while (i < iv) : (i += 1) {
             std.debug.print(" ", .{});
         }
-        std.debug.print("}}\n", .{});
+        std.debug.print("}}", .{});
+    }
+
+    /// std.fmt.allocPrint the JSON object
+    /// caller owns the returned memory
+    pub fn allocPrint(self: *JsonObject, allocator: Allocator, indent: ?usize) ![]u8 {
+        var result = std.ArrayList(u8).init(allocator);
+        try result.appendSlice("{\n");
+        var iv = if (indent) |v| v + 2 else 2;
+        for (self.map.keys(), 0..) |key, index| {
+            var i: usize = 0;
+            while (i < iv) : (i += 1) {
+                try result.append(' ');
+            }
+            try result.appendSlice(try fmt.allocPrint(allocator, "\"{s}\": ", .{key}));
+            const value = self.map.get(key);
+            if (value) |v| {
+                try result.appendSlice(try v.allocPrint(allocator, iv));
+            }
+            if (index < self.map.count() - 1) {
+                try result.appendSlice(",\n");
+            }
+        }
+        iv -= 2;
+        try result.append('\n');
+        var i: usize = 0;
+        while (i < iv) : (i += 1) {
+            try result.append(' ');
+        }
+        try result.append('}');
+        return result.toOwnedSlice();
     }
 };
 
@@ -280,7 +311,33 @@ pub const JsonArray = struct {
         while (i < iv) : (i += 1) {
             std.debug.print(" ", .{});
         }
-        std.debug.print("]\n", .{});
+        std.debug.print("]", .{});
+    }
+
+    /// std.fmt.allocPrint the JSON array
+    /// caller owns the returned memory
+    pub fn allocPrint(self: *JsonArray, allocator: Allocator, indent: ?usize) ![]u8 {
+        var result = std.ArrayList(u8).init(allocator);
+        try result.appendSlice("[\n");
+        var iv = if (indent) |v| v + 2 else 2;
+        for (self.array.items, 0..) |item, index| {
+            var i: usize = 0;
+            while (i < iv) : (i += 1) {
+                try result.append(' ');
+            }
+            try result.appendSlice(try item.allocPrint(allocator, iv));
+            if (index < self.len() - 1) {
+                try result.appendSlice(",\n");
+            }
+        }
+        try result.append('\n');
+        iv -= 2;
+        var i: usize = 0;
+        while (i < iv) : (i += 1) {
+            try result.append(' ');
+        }
+        try result.append(']');
+        return result.toOwnedSlice();
     }
 };
 
@@ -429,6 +486,20 @@ pub const JsonValue = struct {
             JsonType.nil => std.debug.print("null", .{}),
             JsonType.object => self.value.?.object.print(indent),
             JsonType.array => self.value.?.array.print(indent),
+        }
+    }
+
+    /// std.fmt.allocPrint the JSON value
+    /// caller owns the memory
+    pub fn allocPrint(self: *JsonValue, allocator: Allocator, indent: ?usize) ![]u8 {
+        switch (self.type) {
+            JsonType.integer => fmt.allocPrint(allocator, "{d}", .{self.integer()}),
+            JsonType.float => fmt.allocPrint(allocator, "{d}", .{self.float()}),
+            JsonType.string => fmt.allocPrint(allocator, "\"{s}\"", .{self.string()}),
+            JsonType.boolean => fmt.allocPrint(allocator, "\"{any}\"", .{self.boolean()}),
+            JsonType.nil => fmt.allocPrint(allocator, "null", .{}),
+            JsonType.object => try self.value.?.object.allocPrint(allocator, indent),
+            JsonType.array => try self.value.?.array.allocPrint(allocator, indent),
         }
     }
 };
